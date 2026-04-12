@@ -37,7 +37,6 @@ def _build_cover_url(base_url, item_id, cover_path):
 
 
 def get_audiobookshelf_data():
-	print("Checking Audiobookshelf sessions...")
 	if not AUDIOBOOKSHELF_SERVER_URL or not API_KEY:
 		return None
 
@@ -56,7 +55,6 @@ def get_audiobookshelf_data():
 		response = requests.get(f"{base_url}/api/sessions", headers=headers, params=params, timeout=30)
 		response.raise_for_status()
 		payload = response.json()
-		print("Fetching sessions from Audiobookshelf...")
 	except (requests.RequestException, ValueError):
 		return None
 

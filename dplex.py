@@ -71,7 +71,6 @@ def _get_episode_year(session):
 
 def get_plex_data():
     sessions = plex.sessions()
-    print(sessions)
     if sessions:
         for session in sessions[::-1]:
             if session.usernames[0] == user:
@@ -83,10 +82,6 @@ def get_plex_data():
                     hostname = socket.gethostname()
                     if session.players[0].title != hostname:
                         continue
-                print(f"Title: {session.title}")
-                print(f"Type: {session.type}")
-                print(f"Player: {session.players[0].title}")
-                print(f"Progress: {session.viewOffset}/{session.duration}")
                 if session.type == "episode":
                     media_id = str(
                         getattr(session, "grandparentRatingKey", None)

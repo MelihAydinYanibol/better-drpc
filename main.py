@@ -15,40 +15,58 @@ from dplex import get_plex_data
 from djelly import get_jellyfin_data
 from dabs import get_audiobookshelf_data
 from cache import get_image
+DEBUG = False
+args = sys.argv[1:]
 
-if sys.argv and sys.argv[1] == "--help" or sys.argv[1] == "-h":
+if args and args[0] in ("--help", "-h"):
     print("Usage: python main.py [--clear-cache <jellyfin|plex|abs|all>] [--help|-h]")
     print("Options:")
     print("  --clear-cache <type>   Clear cached images and URLs for the specified type (jellyfin, plex, abs, or all).")
     print("  --help, -h            Show this help message and exit.")
     sys.exit(0)
-if sys.argv and sys.argv[1] == "--clear-cache":
-    if len(sys.argv) >= 3:
-        if sys.argv[2] == "all": s = True
-        else: s = False
-        if sys.argv[2] == "jellyfin" or s:
+
+if args and args[0] in ("-debug", "--debug"):
+    DEBUG = True
+if args and args[0] == "--clear-cache":
+    if len(args) < 2:
+        print("Missing cache type. Use: --clear-cache <jellyfin|plex|abs|all>")
+        sys.exit(1)
+
+    if args[1] == "all":
+        s = True
+    else:
+        s = False
+
+    if args[1] == "jellyfin" or s:
             ## Clearing the cache/jellyfin directory and cache/jellyfin_cache.txt file to remove all cached images and URLs for Jellyfin.
             for filename in os.listdir("cache/jellyfin"):
                 file_path = os.path.join("cache/jellyfin", filename)
                 if os.path.isfile(file_path):
                     os.remove(file_path)
-        elif sys.argv[2] == "plex" or s:
+    elif args[1] == "plex" or s:
             ## Clearing the cache/plex directory and cache/plex_cache.txt file to remove all cached images and URLs for Plex.
             for filename in os.listdir("cache/plex"):
                 file_path = os.path.join("cache/plex", filename)
                 if os.path.isfile(file_path):
                     os.remove(file_path)
-        elif sys.argv[2] == "abs" or s:
+    elif args[1] == "abs" or s:
             ## Clearing the cache/audiobookshelf directory and cache/audiobookshelf_cache.txt file to remove all cached images and URLs for Audiobookshelf.
             for filename in os.listdir("cache/audiobookshelf"):
                 file_path = os.path.join("cache/audiobookshelf", filename)
                 if os.path.isfile(file_path):
                     os.remove(file_path)
-    os._exit(1)
+    else:
+        print("Invalid cache type. Use one of: jellyfin, plex, abs, all")
+        sys.exit(1)
+
+    sys.exit(0)
 
 dotenv.load_dotenv()
 client_id = os.getenv("CLIENT_ID")
 rpc = Presence(client_id)
+
+os.system("cls" if os.name == "nt" else "clear")
+if DEBUG: print("Debug mode enabled. Verbose logging is active.")
 
 CHECK_INTERVAL = 7
 ACTIVE_CHECK_INTERVAL = 3
@@ -59,6 +77,11 @@ ACTIVITY = {"jellyfin": None, "plex": None, "audiobookshelf": None}
 _ACT = None
 _RPC_CONNECTED = False
 OLD_PAYLOAD = None
+
+def lg(message):
+    global DEBUG
+    if DEBUG:
+        print(message)
 
 def ensure_rpc_connection(force=False):
     global _RPC_CONNECTED, LAST_CONNECT_ATTEMPT
@@ -80,6 +103,10 @@ def ensure_rpc_connection(force=False):
         _RPC_CONNECTED = False
         print(f"Discord RPC unavailable: {error}")
         return False
+if os.path.exists("version.txt"):
+    with open("version.txt", "r") as version_file:
+        _version = version_file.read().strip(); version_file.close()
+else: _version = "unknown"
 
 def safe_rpc_call(fn, **kwargs):
     global _RPC_CONNECTED
@@ -114,9 +141,10 @@ def drpc(data):
             {
                 "activity_type": ActivityType.WATCHING,
                 "details": f"{data['media_title']} ({data['year']})",
-                "state": f"{data['genres']} - better-drpc",
+                "state": f"{data['genres']}",
                 "name": server,
                 "large_text": data["media_title"],
+                "small_text": f"better-drpc v{_version}",
             }
         )
     elif data["media_type"] == "episode":
@@ -124,9 +152,10 @@ def drpc(data):
             {
                 "activity_type": ActivityType.WATCHING,
                 "details": f"{data['media_title']} ({data['year']})",
-                "state": f"S{data['season']}E{data['episode']} - {data['episode_title']} - better-drpc",
+                "state": f"S{data['season']}E{data['episode']} - {data['episode_title']}",
                 "name": server,
                 "large_text": data["media_title"],
+                "small_text": f"better-drpc v{_version}",
             }
         )
     elif data["media_type"] == "track":
@@ -137,6 +166,7 @@ def drpc(data):
                 "name": "Plexamp" if data.get("server") == "plex" else ("Audiobookshelf" if data.get("server") == "audiobookshelf" else "Jellyfin"),
                 "state": f"by {data['artist']}",
                 "large_text": f"{data['album']} ({data['year']})",
+                "small_text": f"better-drpc v{_version}",
             }
         )
     else:
@@ -171,7 +201,7 @@ while True:
     jdata = get_jellyfin_data()
     pdata = get_plex_data()
     adata = get_audiobookshelf_data()
-    print(adata)
+    lg(adata)
     if jdata is not None and ACTIVITY["jellyfin"] is None:
         ACTIVITY["jellyfin"] = time.time()
     elif jdata is None:
@@ -213,6 +243,6 @@ while True:
             _ACT = False
         else:
             clear_presence()
-        print("No active session found.")
+        lg("No active session found.")
         time.sleep(CHECK_INTERVAL)
 
