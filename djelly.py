@@ -58,10 +58,21 @@ def get_jellyfin_data():
 		position_ms = _ticks_to_ms(session.get("PlayState", {}).get("PositionTicks", 0))
 		duration_ms = _ticks_to_ms(item.get("RunTimeTicks", 0))
 
+		image_item_id = item.get("Id")
+		image_tag = item.get("ImageTags", {}).get("Primary")
+		if item_type == "episode":
+			# For episodes, prefer the TV series poster instead of episode artwork.
+			image_item_id = item.get("SeriesId") or image_item_id
+			image_tag = item.get("SeriesPrimaryImageTag") or image_tag
+
 		output = {
 			"progress": [position_ms, duration_ms],
 			"server": "jellyfin",
-			"image": get_image(f"{SERVER_URL}/Items/{item.get('Id')}/Images/Primary?tag={item.get('ImageTags', {}).get('Primary')}&quality=90",item.get("Id"),"jellyfin").get("url", None),
+			"image": get_image(
+				f"{SERVER_URL}/Items/{image_item_id}/Images/Primary?tag={image_tag}&quality=90",
+				str(image_item_id),
+				"jellyfin"
+			).get("url", None),
 		}
 		print(item.get('Id'))
 		print(output["image"])

@@ -6,8 +6,7 @@ if not os.path.exists(f"cache/plex"): os.makedirs(f"cache/plex", exist_ok=True)
 if not os.path.exists(f"cache/jellyfin_cache.txt"): open(f"cache/jellyfin_cache.txt", "w").close()
 if not os.path.exists(f"cache/plex_cache.txt"): open(f"cache/plex_cache.txt", "w").close()
 
-
-def upload_to_litterbox(file_path, cache_type, expiry="1h"):
+def upload_to_litterbox(file_path, cache_type,id, expiry="1h"):
     url = "https://litterbox.catbox.moe/resources/internals/api.php"
     
     # Define the parameters for the request
@@ -49,22 +48,36 @@ def cache_image(image_url,id,type):
         return {"code":400, "message":"Invalid type specified"}
     
 
-def get_image(url,id,type):
+def get_image(url,id,type,icon_mode=False):
+    # Check if cached URL exists and is still valid
     if os.path.exists(f"cache/{type}_cache.txt"):
         with open(f"cache/{type}_cache.txt", "r") as cache_file:
             for line in cache_file:
                 cached_id, cached_url = line.strip().split(": ", 1)
                 if cached_id == id:
-                    return {"code": 200, "url": cached_url, "message": "Image URL retrieved from cache"}
-            else:
-                data = cache_image(url, id, type)
-                if data["code"] == 200:
-                    upload_response = upload_to_litterbox(data["path"], type)
-                    if upload_response["code"] == 200:
-                        return {"code": 200, "url": upload_response["url"], "message": "Image uploaded and URL retrieved"}
-                    else:
-                        return {"code": upload_response["code"], "message": "Failed to upload image to litterbox"}
-                else:
-                    return {"code": data["code"], "message": "Failed to cache image"}
-            cache_file.close()
+                    try:
+                        response = requests.get(cached_url, timeout=5)
+                        if response.status_code == 200:
+                            return {"code": 200, "url": cached_url, "message": "Image URL retrieved from cache"}
+                    except requests.RequestException:
+                        pass
+                    # URL is expired/invalid, fall through to re-cache
+    
+    # If we get here, either cache doesn't exist, ID wasn't found, or URL was expired
+    if not os.path.exists(f"cache/{type}/{id}.jpg"):
+        if icon_mode:
+            data = {"code": 200, "message": "Icon mode enabled, skipping caching.", "path": url}
+        else:
+            data = cache_image(url, id, type)
+    else: 
+        data = {"code": 200, "message": "Image already cached", "path": f"cache/{type}/{id}.jpg"}
+    
+    if data["code"] == 200:
+        upload_response = upload_to_litterbox(data["path"],type,id=id)
+        if upload_response["code"] == 200:
+            return {"code": 200, "url": upload_response["url"], "message": "Image uploaded and URL retrieved"}
+        else:
+            return {"code": upload_response["code"], "message": "Failed to upload image to litterbox"}
+    else:
+        return {"code": data["code"], "message": "Failed to cache image"}
 

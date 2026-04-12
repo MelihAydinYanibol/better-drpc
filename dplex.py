@@ -20,7 +20,17 @@ def _format_index(value):
 
 
 def _build_image_url(session):
-    thumb_path = getattr(session, "thumb", None) or getattr(session, "art", None)
+    is_episode = getattr(session, "type", None) == "episode"
+    if is_episode:
+        # Prefer series poster/background for episodes.
+        thumb_path = (
+            getattr(session, "grandparentThumb", None)
+            or getattr(session, "grandparentArt", None)
+            or getattr(session, "thumb", None)
+            or getattr(session, "art", None)
+        )
+    else:
+        thumb_path = getattr(session, "thumb", None) or getattr(session, "art", None)
     if not thumb_path:
         return None
 
@@ -35,13 +45,33 @@ def _build_image_url(session):
     return f"{plex._baseurl}{thumb_path}?{query}"
 
 
+def _get_episode_year(session):
+    year = getattr(session, "grandparentYear", None)
+    if year is not None:
+        return year
+
+    # Session payloads can be partial; refetching can expose missing fields.
+    try:
+        full_item = plex.fetchItem(session.ratingKey)
+        year = getattr(full_item, "grandparentYear", None)
+        if year is None:
+            year = getattr(full_item, "year", None)
+    except Exception:
+        year = None
+
+    if year is not None:
+        return year
+
+    available_at = getattr(session, "originallyAvailableAt", None)
+    return getattr(available_at, "year", None)
+
+
 
 def get_plex_data():
     sessions = plex.sessions()
     print(sessions)
     if sessions:
         for session in sessions[::-1]:
-            print(session)
             if session.usernames[0] == user:
                 player_state = (getattr(session.players[0], "state", "") or "").lower()
                 if player_state == "paused":
@@ -50,7 +80,13 @@ def get_plex_data():
                 print(f"Type: {session.type}")
                 print(f"Player: {session.players[0].title}")
                 print(f"Progress: {session.viewOffset}/{session.duration}")
-                media_id = str(getattr(session, "ratingKey", ""))
+                if session.type == "episode":
+                    media_id = str(
+                        getattr(session, "grandparentRatingKey", None)
+                        or getattr(session, "ratingKey", "")
+                    )
+                else:
+                    media_id = str(getattr(session, "ratingKey", ""))
                 output = {
                     "server": "plex",
                     "media_type": session.type,
@@ -66,7 +102,7 @@ def get_plex_data():
                     output["episode_title"] = session.title
                     output["season"] = _format_index(getattr(session, "parentIndex", None))
                     output["episode"] = _format_index(getattr(session, "index", None))
-                    output["year"] = session.grandparentYear
+                    output["year"] = _get_episode_year(session)
                 elif session.type == "track":
                     output["media_title"] = session.title
                     output["artist"] = session.grandparentTitle
