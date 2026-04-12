@@ -5,6 +5,7 @@ import time
 import socket
 from urllib.parse import urlencode
 from cache import get_image
+ONLY_THIS_DEVICE = os.getenv("ONLY_GET_THIS_DEVICE", "false").lower() == "true"
 
 dotenv.load_dotenv()
 token = os.getenv("PLEX_TOKEN")
