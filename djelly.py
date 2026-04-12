@@ -3,12 +3,14 @@ import time
 import dotenv
 import requests
 from cache import get_image
+import socket
 
 dotenv.load_dotenv()
 
 SERVER_URL = os.getenv("JELLYFIN_SERVER_URL")
 API_KEY = os.getenv("JELLYFIN_API_KEY")
 USER = os.getenv("JELLYFIN_USER")
+ONLY_THIS_DEVICE = os.getenv("ONLY_GET_THIS_DEVICE", "false").lower() == "true"
 
 
 def _ticks_to_ms(ticks):
@@ -45,7 +47,11 @@ def get_jellyfin_data():
 	for session in reversed(sessions):
 		if USER and session.get("UserName") != USER:
 			continue
-
+		if ONLY_THIS_DEVICE:
+			## Checking the hostname of the device running this code to check if it matches the session's device name. This is a simple way to filter sessions to only those from the current machine, but it relies on the device name being unique and consistent.
+			hostname = socket.gethostname()
+			if session.get("DeviceName") != hostname:
+				continue
 		# Ignore paused sessions so only actively playing media is returned.
 		if session.get("PlayState", {}).get("IsPaused"):
 			continue

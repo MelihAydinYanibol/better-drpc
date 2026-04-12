@@ -3,8 +3,10 @@ import dotenv
 import os
 if not os.path.exists(f"cache/jellyfin"): os.makedirs(f"cache/jellyfin", exist_ok=True)
 if not os.path.exists(f"cache/plex"): os.makedirs(f"cache/plex", exist_ok=True)
+if not os.path.exists(f"cache/audiobookshelf"): os.makedirs(f"cache/audiobookshelf", exist_ok=True)
 if not os.path.exists(f"cache/jellyfin_cache.txt"): open(f"cache/jellyfin_cache.txt", "w").close()
 if not os.path.exists(f"cache/plex_cache.txt"): open(f"cache/plex_cache.txt", "w").close()
+if not os.path.exists(f"cache/audiobookshelf_cache.txt"): open(f"cache/audiobookshelf_cache.txt", "w").close()
 
 def upload_to_litterbox(file_path, cache_type,id, expiry="1h"):
     url = "https://litterbox.catbox.moe/resources/internals/api.php"
@@ -32,11 +34,12 @@ def upload_to_litterbox(file_path, cache_type,id, expiry="1h"):
     except FileNotFoundError:
         return {"code": 404, "message": "File not found"}
 
-def cache_image(image_url,id,type):
+def cache_image(image_url,id,type,headers=None):
     if not os.path.exists(f"cache/jellyfin"): os.makedirs(f"cache/jellyfin", exist_ok=True)
     if not os.path.exists(f"cache/plex"): os.makedirs(f"cache/plex", exist_ok=True)
-    if type in ["jellyfin", "plex"]:
-        response = requests.get(image_url, stream=True)
+    if not os.path.exists(f"cache/audiobookshelf"): os.makedirs(f"cache/audiobookshelf", exist_ok=True)
+    if type in ["jellyfin", "plex", "audiobookshelf"]:
+        response = requests.get(image_url, stream=True, headers=headers)
         if response.status_code == 200:
             with open(f'cache/{type}/{id}.jpg', 'wb') as f:
                 for chunk in response.iter_content(1024):
@@ -48,7 +51,7 @@ def cache_image(image_url,id,type):
         return {"code":400, "message":"Invalid type specified"}
     
 
-def get_image(url,id,type,icon_mode=False):
+def get_image(url,id,type,icon_mode=False,headers=None):
     # Check if cached URL exists and is still valid
     if os.path.exists(f"cache/{type}_cache.txt"):
         with open(f"cache/{type}_cache.txt", "r") as cache_file:
@@ -68,7 +71,7 @@ def get_image(url,id,type,icon_mode=False):
         if icon_mode:
             data = {"code": 200, "message": "Icon mode enabled, skipping caching.", "path": url}
         else:
-            data = cache_image(url, id, type)
+            data = cache_image(url, id, type, headers=headers)
     else: 
         data = {"code": 200, "message": "Image already cached", "path": f"cache/{type}/{id}.jpg"}
     

@@ -10,9 +10,42 @@ from pypresence.exceptions import (
 import dotenv
 import os
 import time
+import sys
 from dplex import get_plex_data
 from djelly import get_jellyfin_data
+from dabs import get_audiobookshelf_data
 from cache import get_image
+
+if sys.argv and sys.argv[1] == "--help" or sys.argv[1] == "-h":
+    print("Usage: python main.py [--clear-cache <jellyfin|plex|abs|all>] [--help|-h]")
+    print("Options:")
+    print("  --clear-cache <type>   Clear cached images and URLs for the specified type (jellyfin, plex, abs, or all).")
+    print("  --help, -h            Show this help message and exit.")
+    sys.exit(0)
+if sys.argv and sys.argv[1] == "--clear-cache":
+    if len(sys.argv) >= 3:
+        if sys.argv[2] == "all": s = True
+        else: s = False
+        if sys.argv[2] == "jellyfin" or s:
+            ## Clearing the cache/jellyfin directory and cache/jellyfin_cache.txt file to remove all cached images and URLs for Jellyfin.
+            for filename in os.listdir("cache/jellyfin"):
+                file_path = os.path.join("cache/jellyfin", filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+        elif sys.argv[2] == "plex" or s:
+            ## Clearing the cache/plex directory and cache/plex_cache.txt file to remove all cached images and URLs for Plex.
+            for filename in os.listdir("cache/plex"):
+                file_path = os.path.join("cache/plex", filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+        elif sys.argv[2] == "abs" or s:
+            ## Clearing the cache/audiobookshelf directory and cache/audiobookshelf_cache.txt file to remove all cached images and URLs for Audiobookshelf.
+            for filename in os.listdir("cache/audiobookshelf"):
+                file_path = os.path.join("cache/audiobookshelf", filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+    os._exit(1)
+
 dotenv.load_dotenv()
 client_id = os.getenv("CLIENT_ID")
 rpc = Presence(client_id)
@@ -22,7 +55,7 @@ ACTIVE_CHECK_INTERVAL = 3
 LAST_CHECK = 0
 LAST_CONNECT_ATTEMPT = 0
 RECONNECT_INTERVAL = 10
-ACTIVITY = {"jellyfin": None, "plex": None}
+ACTIVITY = {"jellyfin": None, "plex": None, "audiobookshelf": None}
 _ACT = None
 _RPC_CONNECTED = False
 OLD_PAYLOAD = None
@@ -48,7 +81,6 @@ def ensure_rpc_connection(force=False):
         print(f"Discord RPC unavailable: {error}")
         return False
 
-
 def safe_rpc_call(fn, **kwargs):
     global _RPC_CONNECTED
     try:
@@ -73,8 +105,8 @@ def drpc(data):
         "start": start,
         "end": end,
         "large_image": data.get("image"),
-        "small_image": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/jellyfin.png" if data.get("server") == "jellyfin" else ("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/plex.png" if data.get("server") == "plex" else None),
-        "small_text": "Jellyfin" if data.get("server") == "jellyfin" else ("Plex" if data.get("server") == "plex" else None),
+        "small_image": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/jellyfin.png" if data.get("server") == "jellyfin" else ("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/plex.png" if data.get("server") == "plex" else ("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/audiobookshelf.png" if data.get("server") == "audiobookshelf" else None)),
+        "small_text": "Jellyfin" if data.get("server") == "jellyfin" else ("Plex" if data.get("server") == "plex" else ("Audiobookshelf" if data.get("server") == "audiobookshelf" else None)),
     }
 
     if data["media_type"] == "movie":
@@ -102,7 +134,7 @@ def drpc(data):
             {
                 "activity_type": ActivityType.LISTENING,
                 "details": f"{data['media_title']}",
-                "name": "Plexamp" if data.get("server") == "plex" else "Jellyfin",
+                "name": "Plexamp" if data.get("server") == "plex" else ("Audiobookshelf" if data.get("server") == "audiobookshelf" else "Jellyfin"),
                 "state": f"by {data['artist']}",
                 "large_text": f"{data['album']} ({data['year']})",
             }
@@ -122,7 +154,6 @@ def drpc(data):
             return safe_rpc_call(rpc.update, **payload)
         return False
 
-
 def clear_presence():
     if not ensure_rpc_connection():
         return False
@@ -133,14 +164,14 @@ def clear_presence():
         return safe_rpc_call(rpc.clear)
     return False
 
-
 print("Starting better-drpc...")
 ensure_rpc_connection()
 
 while True:
     jdata = get_jellyfin_data()
     pdata = get_plex_data()
-
+    adata = get_audiobookshelf_data()
+    print(adata)
     if jdata is not None and ACTIVITY["jellyfin"] is None:
         ACTIVITY["jellyfin"] = time.time()
     elif jdata is None:
@@ -151,15 +182,21 @@ while True:
     elif pdata is None:
         ACTIVITY["plex"] = None
 
-    if jdata is not None and pdata is not None:
-        if ACTIVITY["jellyfin"] >= ACTIVITY["plex"]:
-            data = jdata
-        else:
-            data = pdata
-    elif jdata is not None:
-        data = jdata
-    elif pdata is not None:
-        data = pdata
+    if adata is not None and ACTIVITY["audiobookshelf"] is None:
+        ACTIVITY["audiobookshelf"] = time.time()
+    elif adata is None:
+        ACTIVITY["audiobookshelf"] = None
+
+    available = []
+    if jdata is not None:
+        available.append((ACTIVITY["jellyfin"] or 0, jdata))
+    if pdata is not None:
+        available.append((ACTIVITY["plex"] or 0, pdata))
+    if adata is not None:
+        available.append((ACTIVITY["audiobookshelf"] or 0, adata))
+
+    if available:
+        data = max(available, key=lambda item: item[0])[1]
     else:
         data = None
 

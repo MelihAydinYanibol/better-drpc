@@ -2,6 +2,7 @@ from plexapi.myplex import MyPlexAccount
 import dotenv
 import os
 import time
+import socket
 from urllib.parse import urlencode
 from cache import get_image
 
@@ -76,6 +77,11 @@ def get_plex_data():
                 player_state = (getattr(session.players[0], "state", "") or "").lower()
                 if player_state == "paused":
                     continue
+                if ONLY_THIS_DEVICE:
+                    ## Checking the hostname of the device running this code to check if it matches the session's device name. This is a simple way to filter sessions to only those from the current machine, but it relies on the device name being unique and consistent.
+                    hostname = socket.gethostname()
+                    if session.players[0].title != hostname:
+                        continue
                 print(f"Title: {session.title}")
                 print(f"Type: {session.type}")
                 print(f"Player: {session.players[0].title}")
