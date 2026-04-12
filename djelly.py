@@ -80,8 +80,6 @@ def get_jellyfin_data():
 				"jellyfin"
 			).get("url", None),
 		}
-		print(item.get('Id'))
-		print(output["image"])
 		if item_type == "movie":
 			output["media_type"] = "movie"
 			output["media_title"] = item.get("Name")
@@ -108,5 +106,3 @@ def get_jellyfin_data():
 			return output
 
 	return None
-
-print(get_jellyfin_data())

@@ -129,6 +129,3 @@ def get_plex_data():
             return None
     else:
         return None
-                
-
-print(get_plex_data())
