@@ -2,9 +2,10 @@ import requests
 import dotenv
 import os
 from cache import get_image
+import time
 
 dotenv.load_dotenv()
-
+DEBUG = False
 AUDIOBOOKSHELF_SERVER_URL = os.getenv("AUDIOBOOKSHELF_SERVER_URL")
 API_KEY = os.getenv("AUDIOBOOKSHELF_API_KEY")
 USER = os.getenv("AUDIOBOOKSHELF_USER")
@@ -15,6 +16,10 @@ def _to_ms(seconds_value):
 	except (TypeError, ValueError):
 		return 0
 
+def lg(*args):
+	global DEBUG
+	if DEBUG:
+		print("[DABS]", *args)
 
 def _resolve_year(metadata):
 	release_date = metadata.get("releaseDate") if isinstance(metadata, dict) else None
@@ -60,12 +65,17 @@ def get_audiobookshelf_data():
 
 	sessions = payload.get("sessions") or []
 	if not sessions:
+		lg("No active sessions found.")
 		return None
 
 	for session in reversed(sessions):
+		lg(session)
 		if USER and session.get("userId") != USER:
+			lg(f"Skipping session for user {session.get('userId')}, looking for {USER}.")
 			continue
-		if session.get("state", "").lower() != "playing":
+		is_stale = (int(time.time() * 1000) - session.get("updatedAt", 0)) > 10*1000
+		if is_stale:
+			lg(f"Session in state {session.get('state')} appears stale, skipping.")
 			continue
 		position_ms = _to_ms(session.get("currentTime", 0))
 		duration_ms = _to_ms(session.get("duration", 0))
@@ -106,4 +116,11 @@ def get_audiobookshelf_data():
 		return output
 
 	return None
-    
+
+if __name__ == "__main__":
+	DEBUG = True
+	data = get_audiobookshelf_data()
+	while True:
+		lg(get_audiobookshelf_data())
+		import time
+		time.sleep(4)
