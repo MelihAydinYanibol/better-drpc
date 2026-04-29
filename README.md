@@ -58,7 +58,7 @@ Create a `.env` file in the project root.
 
 - `AUDIOBOOKSHELF_SERVER_URL` (optional)
 - `AUDIOBOOKSHELF_API_KEY` (optional)
-- `AUDIOBOOKSHELF_USER` (optional, user filter in API request)
+- `AUDIOBOOKSHELF_USER` (optional, filter sessions by Audiobookshelf **user ID** — not the display name; find it in Settings → Users in the Audiobookshelf web UI)
 
 ### Device Filter
 
@@ -80,7 +80,7 @@ PLEX_USER=your_plex_username
 
 AUDIOBOOKSHELF_SERVER_URL=http://192.168.1.30:13378
 AUDIOBOOKSHELF_API_KEY=your_abs_api_key
-AUDIOBOOKSHELF_USER=your_abs_user
+AUDIOBOOKSHELF_USER=usr_yourUserIdHere
 
 ONLY_GET_THIS_DEVICE=false
 ```
