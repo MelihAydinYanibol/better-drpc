@@ -45,7 +45,7 @@ def get_jellyfin_data():
 		return None
 
 	for session in reversed(sessions):
-		if USER and session.get("UserName") != USER:
+		if session.get("UserName") != USER:
 			continue
 		if ONLY_THIS_DEVICE:
 			## Checking the hostname of the device running this code to check if it matches the session's device name. This is a simple way to filter sessions to only those from the current machine, but it relies on the device name being unique and consistent.
