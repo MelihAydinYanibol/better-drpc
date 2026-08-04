@@ -70,6 +70,7 @@ if DEBUG: print("Debug mode enabled. Verbose logging is active.")
 
 CHECK_INTERVAL = 7
 ACTIVE_CHECK_INTERVAL = 3
+MUSIC_CHECK_INTERVAL = 1
 LAST_CHECK = 0
 LAST_CONNECT_ATTEMPT = 0
 RECONNECT_INTERVAL = 10
@@ -233,7 +234,12 @@ while True:
     if data is not None:
         if drpc(data):
             _ACT = True
-        if (data.get("progress")[1]-data.get("progress")[0])/1000 < 7:
+        remaining = (data.get("progress")[1]-data.get("progress")[0])/1000
+        if data.get("media_type") == "track":
+            # Music tracks are short and skipped often, so poll quickly to
+            # catch song changes (including manual skips) without a noticeable lag.
+            time.sleep(MUSIC_CHECK_INTERVAL)
+        elif remaining < 7:
             time.sleep(1)
         else:
             time.sleep(ACTIVE_CHECK_INTERVAL)
