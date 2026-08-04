@@ -1,6 +1,15 @@
 import requests
 import dotenv
 import os
+
+dotenv.load_dotenv()
+
+# Ordered list of upload hosts to try, first success wins. Configurable via the
+# IMAGE_UPLOAD_HOSTS env var (comma-separated). litterbox is blocked in some
+# regions (e.g. Turkey), so a fallback keeps Rich Presence images working.
+DEFAULT_UPLOAD_HOSTS = "litterbox,tmpfiles"
+UPLOAD_TIMEOUT = 30
+
 if not os.path.exists(f"cache/jellyfin"): os.makedirs(f"cache/jellyfin", exist_ok=True)
 if not os.path.exists(f"cache/plex"): os.makedirs(f"cache/plex", exist_ok=True)
 if not os.path.exists(f"cache/audiobookshelf"): os.makedirs(f"cache/audiobookshelf", exist_ok=True)
@@ -8,33 +17,82 @@ if not os.path.exists(f"cache/jellyfin_cache.txt"): open(f"cache/jellyfin_cache.
 if not os.path.exists(f"cache/plex_cache.txt"): open(f"cache/plex_cache.txt", "w").close()
 if not os.path.exists(f"cache/audiobookshelf_cache.txt"): open(f"cache/audiobookshelf_cache.txt", "w").close()
 
-def upload_to_litterbox(file_path, cache_type,id, expiry="1h"):
+def _upload_litterbox(file_path, expiry="1h"):
+    """Upload to litterbox.catbox.moe. Returns the direct URL or None on failure."""
     url = "https://litterbox.catbox.moe/resources/internals/api.php"
-    
-    # Define the parameters for the request
-    payload = {
-        "reqtype": "fileupload",
-        "time": expiry
-    }
-    
-    # Open the file in binary mode and send the request
-    try:
-        with open(file_path, "rb") as file:
-            files = {"fileToUpload": file}
-            response = requests.post(url, data=payload, files=files)
+    payload = {"reqtype": "fileupload", "time": expiry}
+    with open(file_path, "rb") as file:
+        files = {"fileToUpload": file}
+        response = requests.post(url, data=payload, files=files, timeout=UPLOAD_TIMEOUT)
 
-            file_url = response.text.strip()
-            # Litterbox returns HTTP 200 even on failure, with an error message
-            # as the body instead of a URL, so validate the response is a URL.
-            if response.status_code == 200 and file_url.startswith("http"):
-                with open(f"cache/{cache_type}_cache.txt", "a") as cache_file:
-                    cache_file.write(f"{id}: {file_url}\n")
-                return {"code": 200, "url": file_url, "message": "File uploaded successfully"}
-            else:
-                return {"code": response.status_code, "message": f"Failed to upload file: {file_url}"}
-                
-    except FileNotFoundError:
+    file_url = response.text.strip()
+    # Litterbox returns HTTP 200 even on failure, with an error message as the
+    # body instead of a URL, so validate the response actually is a URL.
+    if response.status_code == 200 and file_url.startswith("http"):
+        return file_url
+    return None
+
+
+def _upload_tmpfiles(file_path, expiry="1h"):
+    """Upload to tmpfiles.org (files kept ~1h). Returns a direct URL or None.
+
+    The API returns a viewer-page URL (tmpfiles.org/<id>/<name>); the direct
+    link Discord needs to fetch the image inserts /dl/ after the host.
+    """
+    url = "https://tmpfiles.org/api/v1/upload"
+    with open(file_path, "rb") as file:
+        files = {"file": file}
+        response = requests.post(url, files=files, timeout=UPLOAD_TIMEOUT)
+
+    if response.status_code != 200:
+        return None
+    try:
+        page_url = (response.json().get("data") or {}).get("url", "")
+    except ValueError:
+        return None
+    if not page_url.startswith("http"):
+        return None
+    return page_url.replace("tmpfiles.org/", "tmpfiles.org/dl/", 1)
+
+
+_UPLOADERS = {
+    "litterbox": _upload_litterbox,
+    "tmpfiles": _upload_tmpfiles,
+}
+
+
+def upload_to_litterbox(file_path, cache_type, id, expiry="1h"):
+    """Upload an image to the first available host and cache the resulting URL.
+
+    Tries each host in IMAGE_UPLOAD_HOSTS in order (default: litterbox then
+    tmpfiles) and returns the first that succeeds. Name kept for backwards
+    compatibility with existing callers.
+    """
+    if not os.path.exists(file_path):
         return {"code": 404, "message": "File not found"}
+
+    hosts = [h.strip().lower() for h in
+             os.getenv("IMAGE_UPLOAD_HOSTS", DEFAULT_UPLOAD_HOSTS).split(",") if h.strip()]
+
+    errors = []
+    for host in hosts:
+        uploader = _UPLOADERS.get(host)
+        if uploader is None:
+            errors.append(f"{host}: unknown host")
+            continue
+        try:
+            file_url = uploader(file_path, expiry)
+        except (requests.RequestException, OSError) as e:
+            errors.append(f"{host}: {e}")
+            continue
+        if file_url:
+            with open(f"cache/{cache_type}_cache.txt", "a") as cache_file:
+                cache_file.write(f"{id}: {file_url}\n")
+            return {"code": 200, "url": file_url,
+                    "message": f"File uploaded successfully via {host}"}
+        errors.append(f"{host}: rejected or unavailable")
+
+    return {"code": 502, "message": "Failed to upload file (" + "; ".join(errors) + ")"}
 
 def cache_image(image_url,id,type,headers=None):
     if not os.path.exists(f"cache/jellyfin"): os.makedirs(f"cache/jellyfin", exist_ok=True)
