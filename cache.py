@@ -1,16 +1,16 @@
 import requests
 import dotenv
 import os
+import base64
 
 dotenv.load_dotenv()
 
 # Ordered list of upload hosts to try, first success wins. Configurable via the
 # IMAGE_UPLOAD_HOSTS env var (comma-separated). litterbox is blocked in some
 # regions (e.g. Turkey), so a fallback keeps Rich Presence images working.
-DEFAULT_UPLOAD_HOSTS = "litterbox,0x0"
+# imgbb needs a free API key (IMGBB_API_KEY); it is skipped when unset.
+DEFAULT_UPLOAD_HOSTS = "litterbox,imgbb"
 UPLOAD_TIMEOUT = 30
-# 0x0.st rejects requests that use a default library User-Agent.
-USER_AGENT = "better-drpc (+https://github.com/MelihAydinYanibol/better-drpc)"
 
 if not os.path.exists(f"cache/jellyfin"): os.makedirs(f"cache/jellyfin", exist_ok=True)
 if not os.path.exists(f"cache/plex"): os.makedirs(f"cache/plex", exist_ok=True)
@@ -35,24 +35,35 @@ def _upload_litterbox(file_path, expiry="1h"):
     return None
 
 
-def _upload_0x0(file_path, expiry="1h"):
-    """Upload to 0x0.st. The returned URL is already the direct file link, so
-    no viewer-page/redirect rewriting is needed. Returns the URL or None."""
-    url = "https://0x0.st"
-    headers = {"User-Agent": USER_AGENT}
+def _upload_imgbb(file_path, expiry="1h"):
+    """Upload to imgbb.com. Requires a free API key in the IMGBB_API_KEY env
+    var; returns None (host skipped) when it is not set. The API's data.url is
+    already a direct image link, so no rewriting is needed."""
+    key = os.getenv("IMGBB_API_KEY")
+    if not key:
+        return None
     with open(file_path, "rb") as file:
-        files = {"file": file}
-        response = requests.post(url, files=files, headers=headers, timeout=UPLOAD_TIMEOUT)
+        payload = {"key": key, "image": base64.b64encode(file.read())}
+    response = requests.post("https://api.imgbb.com/1/upload",
+                             data=payload, timeout=UPLOAD_TIMEOUT)
 
-    file_url = response.text.strip()
-    if response.status_code == 200 and file_url.startswith("http"):
+    if response.status_code != 200:
+        return None
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if not body.get("success"):
+        return None
+    file_url = (body.get("data") or {}).get("url", "")
+    if file_url.startswith("http"):
         return file_url
     return None
 
 
 _UPLOADERS = {
     "litterbox": _upload_litterbox,
-    "0x0": _upload_0x0,
+    "imgbb": _upload_imgbb,
 }
 
 
