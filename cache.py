@@ -22,14 +22,16 @@ def upload_to_litterbox(file_path, cache_type,id, expiry="1h"):
         with open(file_path, "rb") as file:
             files = {"fileToUpload": file}
             response = requests.post(url, data=payload, files=files)
-            
-            if response.status_code == 200:
+
+            file_url = response.text.strip()
+            # Litterbox returns HTTP 200 even on failure, with an error message
+            # as the body instead of a URL, so validate the response is a URL.
+            if response.status_code == 200 and file_url.startswith("http"):
                 with open(f"cache/{cache_type}_cache.txt", "a") as cache_file:
-                    file_url = response.text.strip()
                     cache_file.write(f"{id}: {file_url}\n")
-                return {"code": response.status_code, "url": response.text, "message": "File uploaded successfully"}
+                return {"code": 200, "url": file_url, "message": "File uploaded successfully"}
             else:
-                return {"code": response.status_code, "message": "Failed to upload file"}
+                return {"code": response.status_code, "message": f"Failed to upload file: {file_url}"}
                 
     except FileNotFoundError:
         return {"code": 404, "message": "File not found"}
