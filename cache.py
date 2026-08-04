@@ -1,13 +1,15 @@
 import requests
 import dotenv
 import os
+import base64
 
 dotenv.load_dotenv()
 
 # Ordered list of upload hosts to try, first success wins. Configurable via the
 # IMAGE_UPLOAD_HOSTS env var (comma-separated). litterbox is blocked in some
 # regions (e.g. Turkey), so a fallback keeps Rich Presence images working.
-DEFAULT_UPLOAD_HOSTS = "litterbox,tmpfiles"
+# imgbb needs a free API key (IMGBB_API_KEY); it is skipped when unset.
+DEFAULT_UPLOAD_HOSTS = "litterbox,imgbb"
 UPLOAD_TIMEOUT = 30
 
 if not os.path.exists(f"cache/jellyfin"): os.makedirs(f"cache/jellyfin", exist_ok=True)
@@ -33,31 +35,35 @@ def _upload_litterbox(file_path, expiry="1h"):
     return None
 
 
-def _upload_tmpfiles(file_path, expiry="1h"):
-    """Upload to tmpfiles.org (files kept ~1h). Returns a direct URL or None.
-
-    The API returns a viewer-page URL (tmpfiles.org/<id>/<name>); the direct
-    link Discord needs to fetch the image inserts /dl/ after the host.
-    """
-    url = "https://tmpfiles.org/api/v1/upload"
+def _upload_imgbb(file_path, expiry="1h"):
+    """Upload to imgbb.com. Requires a free API key in the IMGBB_API_KEY env
+    var; returns None (host skipped) when it is not set. The API's data.url is
+    already a direct image link, so no rewriting is needed."""
+    key = os.getenv("IMGBB_API_KEY")
+    if not key:
+        return None
     with open(file_path, "rb") as file:
-        files = {"file": file}
-        response = requests.post(url, files=files, timeout=UPLOAD_TIMEOUT)
+        payload = {"key": key, "image": base64.b64encode(file.read())}
+    response = requests.post("https://api.imgbb.com/1/upload",
+                             data=payload, timeout=UPLOAD_TIMEOUT)
 
     if response.status_code != 200:
         return None
     try:
-        page_url = (response.json().get("data") or {}).get("url", "")
+        body = response.json()
     except ValueError:
         return None
-    if not page_url.startswith("http"):
+    if not body.get("success"):
         return None
-    return page_url.replace("tmpfiles.org/", "tmpfiles.org/dl/", 1)
+    file_url = (body.get("data") or {}).get("url", "")
+    if file_url.startswith("http"):
+        return file_url
+    return None
 
 
 _UPLOADERS = {
     "litterbox": _upload_litterbox,
-    "tmpfiles": _upload_tmpfiles,
+    "imgbb": _upload_imgbb,
 }
 
 

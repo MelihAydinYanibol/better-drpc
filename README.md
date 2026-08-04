@@ -67,10 +67,12 @@ Create a `.env` file in the project root.
 
 ### Image Upload Host
 
-- `IMAGE_UPLOAD_HOSTS` (optional, default `litterbox,tmpfiles`)
+- `IMAGE_UPLOAD_HOSTS` (optional, default `litterbox,imgbb`)
 	- Comma-separated list of hosts used to upload cover art so Discord can display it, tried in order until one succeeds.
-	- Supported values: `litterbox` (litterbox.catbox.moe) and `tmpfiles` (tmpfiles.org).
-	- litterbox is blocked by some ISPs/regions (e.g. Turkey). If it is unreachable for you, set `IMAGE_UPLOAD_HOSTS=tmpfiles` to skip it, or reorder the list to change priority.
+	- Supported values: `litterbox` (litterbox.catbox.moe) and `imgbb` (imgbb.com).
+	- litterbox is blocked by some ISPs/regions (e.g. Turkey). If it is unreachable for you, set `IMAGE_UPLOAD_HOSTS=imgbb` to skip it, or reorder the list to change priority.
+- `IMGBB_API_KEY` (required only when using the `imgbb` host)
+	- Get a free key at <https://api.imgbb.com/> (sign in, then "Get API key"). The `imgbb` host is skipped if this is unset.
 
 ## Example `.env`
 
@@ -92,7 +94,9 @@ AUDIOBOOKSHELF_USER=your_abs_user
 ONLY_GET_THIS_DEVICE=false
 
 # litterbox is blocked in some regions (e.g. Turkey); reorder or drop it if needed
-IMAGE_UPLOAD_HOSTS=litterbox,tmpfiles
+IMAGE_UPLOAD_HOSTS=litterbox,imgbb
+# required only if the imgbb host is used; get a free key at https://api.imgbb.com/
+IMGBB_API_KEY=your_imgbb_api_key
 ```
 
 ## Usage
