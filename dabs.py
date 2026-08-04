@@ -30,8 +30,10 @@ def _resolve_year(metadata):
 
 def _build_cover_url(base_url, item_id, cover_path):
 	# Prefer the API cover endpoint, which is stable across media types.
+	# Cap the width so the artwork is small to download and fast to upload;
+	# Discord only displays it at a few hundred px anyway.
 	if item_id:
-		return f"{base_url}/api/items/{item_id}/cover"
+		return f"{base_url}/api/items/{item_id}/cover?width=512"
 	if cover_path:
 		if cover_path.startswith(("http://", "https://")):
 			return cover_path

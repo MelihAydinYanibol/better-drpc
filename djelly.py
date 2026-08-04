@@ -75,7 +75,10 @@ def get_jellyfin_data():
 			"progress": [position_ms, duration_ms],
 			"server": "jellyfin",
 			"image": get_image(
-				f"{SERVER_URL}/Items/{image_item_id}/Images/Primary?tag={image_tag}&quality=90",
+				# Cap the size so the artwork stays small to download and, more
+				# importantly, fast to upload. Discord only shows it at a few
+				# hundred px, so a full-resolution poster/cover is wasted bytes.
+				f"{SERVER_URL}/Items/{image_item_id}/Images/Primary?tag={image_tag}&quality=90&maxWidth=512&maxHeight=512",
 				str(image_item_id),
 				"jellyfin"
 			).get("url", None),
