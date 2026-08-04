@@ -7,8 +7,10 @@ dotenv.load_dotenv()
 # Ordered list of upload hosts to try, first success wins. Configurable via the
 # IMAGE_UPLOAD_HOSTS env var (comma-separated). litterbox is blocked in some
 # regions (e.g. Turkey), so a fallback keeps Rich Presence images working.
-DEFAULT_UPLOAD_HOSTS = "litterbox,tmpfiles"
+DEFAULT_UPLOAD_HOSTS = "litterbox,0x0"
 UPLOAD_TIMEOUT = 30
+# 0x0.st rejects requests that use a default library User-Agent.
+USER_AGENT = "better-drpc (+https://github.com/MelihAydinYanibol/better-drpc)"
 
 if not os.path.exists(f"cache/jellyfin"): os.makedirs(f"cache/jellyfin", exist_ok=True)
 if not os.path.exists(f"cache/plex"): os.makedirs(f"cache/plex", exist_ok=True)
@@ -33,31 +35,24 @@ def _upload_litterbox(file_path, expiry="1h"):
     return None
 
 
-def _upload_tmpfiles(file_path, expiry="1h"):
-    """Upload to tmpfiles.org (files kept ~1h). Returns a direct URL or None.
-
-    The API returns a viewer-page URL (tmpfiles.org/<id>/<name>); the direct
-    link Discord needs to fetch the image inserts /dl/ after the host.
-    """
-    url = "https://tmpfiles.org/api/v1/upload"
+def _upload_0x0(file_path, expiry="1h"):
+    """Upload to 0x0.st. The returned URL is already the direct file link, so
+    no viewer-page/redirect rewriting is needed. Returns the URL or None."""
+    url = "https://0x0.st"
+    headers = {"User-Agent": USER_AGENT}
     with open(file_path, "rb") as file:
         files = {"file": file}
-        response = requests.post(url, files=files, timeout=UPLOAD_TIMEOUT)
+        response = requests.post(url, files=files, headers=headers, timeout=UPLOAD_TIMEOUT)
 
-    if response.status_code != 200:
-        return None
-    try:
-        page_url = (response.json().get("data") or {}).get("url", "")
-    except ValueError:
-        return None
-    if not page_url.startswith("http"):
-        return None
-    return page_url.replace("tmpfiles.org/", "tmpfiles.org/dl/", 1)
+    file_url = response.text.strip()
+    if response.status_code == 200 and file_url.startswith("http"):
+        return file_url
+    return None
 
 
 _UPLOADERS = {
     "litterbox": _upload_litterbox,
-    "tmpfiles": _upload_tmpfiles,
+    "0x0": _upload_0x0,
 }
 
 
