@@ -58,7 +58,17 @@ Create a `.env` file in the project root.
 
 - `AUDIOBOOKSHELF_SERVER_URL` (optional)
 - `AUDIOBOOKSHELF_API_KEY` (optional)
-- `AUDIOBOOKSHELF_USER` (optional, user filter in API request)
+	- Create one under **Settings → API Keys**. An **admin** key is recommended: only
+		admins may read `/api/sessions/open`, which is the endpoint that reports live
+		playback. A non-admin key still works, but falls back to that user's own
+		listening history, which updates a little later.
+- `AUDIOBOOKSHELF_USER` (optional, filter by Audiobookshelf username or user id)
+	- Leave unset to accept whichever user the API key can see.
+- `AUDIOBOOKSHELF_STALE_AFTER` (optional, default `30`, minimum `25`)
+	- Seconds without a progress sync before playback counts as paused. Audiobookshelf
+		clients sync 20 seconds after playback starts and every 10 seconds after that,
+		so values below ~25 make the presence flicker or never appear. Raise it if you
+		listen on a client that syncs less often.
 
 ### Device Filter
 
@@ -89,7 +99,9 @@ PLEX_USER=your_plex_username
 
 AUDIOBOOKSHELF_SERVER_URL=http://192.168.1.30:13378
 AUDIOBOOKSHELF_API_KEY=your_abs_api_key
-AUDIOBOOKSHELF_USER=your_abs_user
+AUDIOBOOKSHELF_USER=your_abs_username
+# seconds without a progress sync before playback counts as paused
+AUDIOBOOKSHELF_STALE_AFTER=30
 
 ONLY_GET_THIS_DEVICE=false
 
@@ -132,6 +144,11 @@ python main.py --clear-cache all
 
 When multiple services are active, the newest active one is shown.
 
+Audiobookshelf has no "is playing" flag, so playback is inferred from how recently
+the session was synced (see `AUDIOBOOKSHELF_STALE_AFTER`). Session timestamps are
+compared against the server's own clock, read from the HTTP `Date` header, so the
+two machines do not need synchronized clocks.
+
 ## Project Structure
 
 - `main.py`: App loop, server arbitration, Discord RPC update/clear logic
@@ -156,6 +173,15 @@ When multiple services are active, the newest active one is shown.
 - No media detected:
 	- Verify you are actively playing (not paused).
 	- Verify the configured user filters match your active session user.
+	- Run `python main.py --debug` to see which sessions each provider returned and
+		why they were skipped.
+- Audiobookshelf never shows up:
+	- Check `AUDIOBOOKSHELF_USER` — it must match your username or user id exactly,
+		or be left unset.
+	- If the key is not an admin key, playback is read from listening history and can
+		take a few extra seconds to appear.
+	- Presence appearing and disappearing usually means `AUDIOBOOKSHELF_STALE_AFTER`
+		is shorter than your client's sync interval; raise it.
 - Wrong/old artwork:
 	- Clear cache with `--clear-cache <provider>` or `all`.
 

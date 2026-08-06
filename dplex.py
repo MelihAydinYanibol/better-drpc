@@ -5,14 +5,23 @@ import time
 import socket
 from urllib.parse import urlencode
 from cache import get_image
-ONLY_THIS_DEVICE = os.getenv("ONLY_GET_THIS_DEVICE", "false").lower() == "true"
 
 dotenv.load_dotenv()
+ONLY_THIS_DEVICE = os.getenv("ONLY_GET_THIS_DEVICE", "false").lower() == "true"
 token = os.getenv("PLEX_TOKEN")
 server_name = os.getenv("PLEX_SERVER_NAME")
 user = os.getenv("PLEX_USER")
-account = MyPlexAccount(token=token)
-plex = account.resource(server_name).connect()
+
+# Only connect when Plex is actually configured, and tolerate failure: this was
+# previously unguarded, so an unset token or an unreachable server raised during
+# import and took down the whole app before any provider was ever polled.
+plex = None
+if token and server_name:
+    try:
+        plex = MyPlexAccount(token=token).resource(server_name).connect()
+    except Exception as error:
+        print(f"[Plex] Could not connect to '{server_name}': {error}")
+        plex = None
 
 
 def _format_index(value):
@@ -70,7 +79,13 @@ def _get_episode_year(session):
 
 
 def get_plex_data():
-    sessions = plex.sessions()
+    if plex is None:
+        return None
+    try:
+        sessions = plex.sessions()
+    except Exception:
+        # A dropped connection must not kill the loop; retry on the next poll.
+        return None
     if sessions:
         for session in sessions[::-1]:
             if session.usernames[0] == user:

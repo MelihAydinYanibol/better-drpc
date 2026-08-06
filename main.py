@@ -13,6 +13,7 @@ import time
 import sys
 from dplex import get_plex_data
 from djelly import get_jellyfin_data
+import dabs
 from dabs import get_audiobookshelf_data
 from cache import get_image
 DEBUG = False
@@ -27,37 +28,35 @@ if args and args[0] in ("--help", "-h"):
 
 if args and args[0] in ("-debug", "--debug"):
     DEBUG = True
+    dabs.set_debug(True)
 if args and args[0] == "--clear-cache":
     if len(args) < 2:
         print("Missing cache type. Use: --clear-cache <jellyfin|plex|abs|all>")
         sys.exit(1)
 
-    if args[1] == "all":
-        s = True
-    else:
-        s = False
+    CACHE_DIRS = {"jellyfin": "jellyfin", "plex": "plex", "abs": "audiobookshelf"}
 
-    if args[1] == "jellyfin" or s:
-            ## Clearing the cache/jellyfin directory and cache/jellyfin_cache.txt file to remove all cached images and URLs for Jellyfin.
-            for filename in os.listdir("cache/jellyfin"):
-                file_path = os.path.join("cache/jellyfin", filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-    elif args[1] == "plex" or s:
-            ## Clearing the cache/plex directory and cache/plex_cache.txt file to remove all cached images and URLs for Plex.
-            for filename in os.listdir("cache/plex"):
-                file_path = os.path.join("cache/plex", filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-    elif args[1] == "abs" or s:
-            ## Clearing the cache/audiobookshelf directory and cache/audiobookshelf_cache.txt file to remove all cached images and URLs for Audiobookshelf.
-            for filename in os.listdir("cache/audiobookshelf"):
-                file_path = os.path.join("cache/audiobookshelf", filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
+    if args[1] == "all":
+        targets = list(CACHE_DIRS.values())
+    elif args[1] in CACHE_DIRS:
+        targets = [CACHE_DIRS[args[1]]]
     else:
         print("Invalid cache type. Use one of: jellyfin, plex, abs, all")
         sys.exit(1)
+
+    for target in targets:
+        ## Clearing both the cached image files and the cached upload URLs. Leaving
+        ## the URL list behind would keep serving the old (possibly expired) links.
+        cache_dir = os.path.join("cache", target)
+        if os.path.isdir(cache_dir):
+            for filename in os.listdir(cache_dir):
+                file_path = os.path.join(cache_dir, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+        url_cache = os.path.join("cache", f"{target}_cache.txt")
+        if os.path.isfile(url_cache):
+            open(url_cache, "w").close()
+        print(f"Cleared {target} cache.")
 
     sys.exit(0)
 
@@ -118,22 +117,69 @@ def safe_rpc_call(fn, **kwargs):
         print(f"Discord RPC call failed: {error}")
         return False
 
+SERVER_ICONS = {
+    "jellyfin": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/jellyfin.png",
+    "plex": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/plex.png",
+    "audiobookshelf": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/audiobookshelf.png",
+}
+SERVER_NAMES = {"jellyfin": "Jellyfin", "plex": "Plex", "audiobookshelf": "Audiobookshelf"}
+TRACK_APP_NAMES = {"jellyfin": "Jellyfin", "plex": "Plexamp", "audiobookshelf": "Audiobookshelf"}
+
+def _fit_text(value, fallback=None):
+    """Discord rejects activity text outside 2-128 characters.
+
+    Returns None when nothing usable is left; pypresence drops None fields.
+    """
+    for candidate in (value, fallback):
+        text = str(candidate).strip() if candidate is not None else ""
+        if len(text) >= 2:
+            return text[:128]
+    return None
+
+def _album_line(data):
+    """Secondary artwork tooltip, without a bare '(None)' when the year is unknown."""
+    album = (data.get("album") or "").strip()
+    year = data.get("year")
+    if album and year:
+        return f"{album} ({year})"
+    return album or (str(year) if year else data.get("media_title"))
+
+def _payload_changed(new, old):
+    """Whether Discord needs a fresh activity.
+
+    Timestamps are compared with a one second tolerance: polling at slightly
+    different points within a second shifts the rounded start/end by a second
+    even though nothing actually changed, and re-sending restarts Discord's
+    progress animation.
+    """
+    if not old:
+        return True
+    if any(new.get(key) != old.get(key) for key in set(new) | set(old)
+           if key not in ("start", "end")):
+        return True
+    return any(abs((new.get(key) or 0) - (old.get(key) or 0)) > 1
+               for key in ("start", "end"))
+
 def drpc(data):
     global OLD_PAYLOAD
     if not ensure_rpc_connection():
         return False
 
-    start = (time.time()-(data["progress"][0]/1000))
-    end = (data["progress"][1]-data["progress"][0])/1000 + time.time()
-    server = "Plex" if data.get("server") == "plex" else "Jellyfin"
+    # Round to whole seconds: Discord's timestamps have second resolution, and
+    # float jitter would otherwise make every poll look like a changed payload
+    # and trigger a needless RPC update.
+    now = time.time()
+    start = round(now - (data["progress"][0] / 1000))
+    end = round(now + (data["progress"][1] - data["progress"][0]) / 1000)
+    provider = data.get("server")
+    server = SERVER_NAMES.get(provider, "Jellyfin")
 
     payload = {
         "status_display_type": StatusDisplayType.DETAILS,
         "start": start,
         "end": end,
         "large_image": data.get("image"),
-        "small_image": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/jellyfin.png" if data.get("server") == "jellyfin" else ("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/plex.png" if data.get("server") == "plex" else ("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/audiobookshelf.png" if data.get("server") == "audiobookshelf" else None)),
-        "small_text": "Jellyfin" if data.get("server") == "jellyfin" else ("Plex" if data.get("server") == "plex" else ("Audiobookshelf" if data.get("server") == "audiobookshelf" else None)),
+        "small_image": SERVER_ICONS.get(provider),
     }
 
     if data["media_type"] == "movie":
@@ -162,10 +208,10 @@ def drpc(data):
         payload.update(
             {
                 "activity_type": ActivityType.LISTENING,
-                "details": f"{data['media_title']}",
-                "name": "Plexamp" if data.get("server") == "plex" else ("Audiobookshelf" if data.get("server") == "audiobookshelf" else "Jellyfin"),
-                "state": f"by {data['artist']}",
-                "large_text": f"{data['album']} ({data['year']})",
+                "details": _fit_text(data["media_title"]),
+                "name": TRACK_APP_NAMES.get(provider, "Jellyfin"),
+                "state": _fit_text(f"by {data['artist']}" if data.get("artist") else None),
+                "large_text": _fit_text(_album_line(data), data["media_title"]),
                 "small_text": f"better-drpc v{_version}",
             }
         )
@@ -173,18 +219,26 @@ def drpc(data):
         OLD_PAYLOAD = None
         return False
     
-    if OLD_PAYLOAD and payload == OLD_PAYLOAD:
+    if not _payload_changed(payload, OLD_PAYLOAD):
         return True
-    else:
-        if safe_rpc_call(rpc.update, **payload):
-            return True
 
-        # Retry once after forcing a reconnect when the pipe times out/closes.
-        if ensure_rpc_connection(force=True):
-            return safe_rpc_call(rpc.update, **payload)
-        return False
+    if safe_rpc_call(rpc.update, **payload):
+        # Remember what Discord is actually showing; without this the
+        # comparison above never matched and every poll re-sent the same
+        # activity.
+        OLD_PAYLOAD = payload
+        return True
+
+    # Retry once after forcing a reconnect when the pipe times out/closes.
+    if ensure_rpc_connection(force=True) and safe_rpc_call(rpc.update, **payload):
+        OLD_PAYLOAD = payload
+        return True
+    OLD_PAYLOAD = None
+    return False
 
 def clear_presence():
+    global OLD_PAYLOAD
+    OLD_PAYLOAD = None
     if not ensure_rpc_connection():
         return False
 
@@ -238,11 +292,10 @@ while True:
         else:
             time.sleep(ACTIVE_CHECK_INTERVAL)
     else:
-        if _ACT:
+        # Clear once on the way down (and once at startup), not on every poll.
+        if _ACT is not False:
             clear_presence()
             _ACT = False
-        else:
-            clear_presence()
         lg("No active session found.")
         time.sleep(CHECK_INTERVAL)
 
