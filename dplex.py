@@ -11,8 +11,41 @@ dotenv.load_dotenv()
 token = os.getenv("PLEX_TOKEN")
 server_name = os.getenv("PLEX_SERVER_NAME")
 user = os.getenv("PLEX_USER")
-account = MyPlexAccount(token=token)
-plex = account.resource(server_name).connect()
+
+# Connecting at import time meant an unset/expired PLEX_TOKEN or an unreachable
+# server crashed the whole app on startup, taking Jellyfin and Audiobookshelf
+# down with it. Connect lazily instead, and retry on an interval so a Plex
+# outage only costs Plex presence.
+plex = None
+_LAST_CONNECT_ATTEMPT = 0
+RECONNECT_INTERVAL = 60
+_WARNED = False
+
+
+def _connect():
+    """Return a connected Plex server, or None while it is unavailable."""
+    global plex, _LAST_CONNECT_ATTEMPT, _WARNED
+
+    if plex is not None:
+        return plex
+    if not token or not server_name:
+        return None
+
+    now = time.time()
+    if _LAST_CONNECT_ATTEMPT and (now - _LAST_CONNECT_ATTEMPT) < RECONNECT_INTERVAL:
+        return None
+    _LAST_CONNECT_ATTEMPT = now
+
+    try:
+        plex = MyPlexAccount(token=token).resource(server_name).connect()
+        print("Connected to Plex.")
+        _WARNED = False
+    except Exception as error:
+        if not _WARNED:
+            _WARNED = True
+            print(f"[Plex] Unavailable, will keep retrying: {error}")
+        plex = None
+    return plex
 
 
 def _format_index(value):
@@ -70,7 +103,20 @@ def _get_episode_year(session):
 
 
 def get_plex_data():
-    sessions = plex.sessions()
+    global plex
+
+    server = _connect()
+    if server is None:
+        return None
+
+    try:
+        sessions = server.sessions()
+    except Exception as error:
+        # Drop the handle so the next poll reconnects instead of failing forever.
+        print(f"[Plex] Failed to read sessions: {error}")
+        plex = None
+        return None
+
     if sessions:
         for session in sessions[::-1]:
             if session.usernames[0] == user:

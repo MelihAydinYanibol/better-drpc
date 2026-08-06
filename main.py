@@ -13,7 +13,7 @@ import time
 import sys
 from dplex import get_plex_data
 from djelly import get_jellyfin_data
-from dabs import get_audiobookshelf_data
+from dabs import get_audiobookshelf_data, set_debug as set_abs_debug
 from cache import get_image
 DEBUG = False
 args = sys.argv[1:]
@@ -32,32 +32,29 @@ if args and args[0] == "--clear-cache":
         print("Missing cache type. Use: --clear-cache <jellyfin|plex|abs|all>")
         sys.exit(1)
 
-    if args[1] == "all":
-        s = True
-    else:
-        s = False
+    CACHE_DIRS = {"jellyfin": "jellyfin", "plex": "plex", "abs": "audiobookshelf"}
 
-    if args[1] == "jellyfin" or s:
-            ## Clearing the cache/jellyfin directory and cache/jellyfin_cache.txt file to remove all cached images and URLs for Jellyfin.
-            for filename in os.listdir("cache/jellyfin"):
-                file_path = os.path.join("cache/jellyfin", filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-    elif args[1] == "plex" or s:
-            ## Clearing the cache/plex directory and cache/plex_cache.txt file to remove all cached images and URLs for Plex.
-            for filename in os.listdir("cache/plex"):
-                file_path = os.path.join("cache/plex", filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-    elif args[1] == "abs" or s:
-            ## Clearing the cache/audiobookshelf directory and cache/audiobookshelf_cache.txt file to remove all cached images and URLs for Audiobookshelf.
-            for filename in os.listdir("cache/audiobookshelf"):
-                file_path = os.path.join("cache/audiobookshelf", filename)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
+    if args[1] == "all":
+        targets = list(CACHE_DIRS.values())
+    elif args[1] in CACHE_DIRS:
+        targets = [CACHE_DIRS[args[1]]]
     else:
         print("Invalid cache type. Use one of: jellyfin, plex, abs, all")
         sys.exit(1)
+
+    for target in targets:
+        ## Clearing the cache/<provider> directory and cache/<provider>_cache.txt
+        ## file to remove all cached images and the uploaded URLs pointing at them.
+        directory = os.path.join("cache", target)
+        if os.path.isdir(directory):
+            for filename in os.listdir(directory):
+                file_path = os.path.join(directory, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+        url_cache = os.path.join("cache", f"{target}_cache.txt")
+        if os.path.isfile(url_cache):
+            open(url_cache, "w").close()
+        print(f"Cleared cache for {target}.")
 
     sys.exit(0)
 
@@ -67,6 +64,7 @@ rpc = Presence(client_id)
 
 os.system("cls" if os.name == "nt" else "clear")
 if DEBUG: print("Debug mode enabled. Verbose logging is active.")
+set_abs_debug(DEBUG)
 
 CHECK_INTERVAL = 7
 ACTIVE_CHECK_INTERVAL = 3
@@ -159,13 +157,17 @@ def drpc(data):
             }
         )
     elif data["media_type"] == "track":
+        # Audiobooks and some music tracks have no year; showing "(None)" is worse
+        # than showing nothing.
+        album = data.get("album") or data["media_title"]
+        large_text = f"{album} ({data['year']})" if data.get("year") else album
         payload.update(
             {
                 "activity_type": ActivityType.LISTENING,
                 "details": f"{data['media_title']}",
                 "name": "Plexamp" if data.get("server") == "plex" else ("Audiobookshelf" if data.get("server") == "audiobookshelf" else "Jellyfin"),
                 "state": f"by {data['artist']}",
-                "large_text": f"{data['album']} ({data['year']})",
+                "large_text": large_text,
                 "small_text": f"better-drpc v{_version}",
             }
         )

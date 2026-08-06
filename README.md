@@ -58,7 +58,12 @@ Create a `.env` file in the project root.
 
 - `AUDIOBOOKSHELF_SERVER_URL` (optional)
 - `AUDIOBOOKSHELF_API_KEY` (optional)
-- `AUDIOBOOKSHELF_USER` (optional, user filter in API request)
+	- An admin key reads `/api/sessions/open`, which is what the server considers currently playing.
+	- A non-admin key gets a 404 there, so it falls back to `/api/me/listening-sessions` (that key's own listening history, newest first). This works fine, it just cannot see other users' playback.
+- `AUDIOBOOKSHELF_USER` (optional, filter by username or user id)
+	- Ignored when using a non-admin key, since those sessions already belong to the key's owner.
+- `AUDIOBOOKSHELF_SESSION_TIMEOUT` (optional, default `45` seconds)
+	- Audiobookshelf has no "paused" flag, and its players only push progress every 10-20 seconds. A session counts as playing while it has synced within this many seconds; after that, presence clears. Lower it for a faster reaction to pausing, raise it if presence flickers while you are still listening.
 
 ### Device Filter
 
@@ -89,7 +94,9 @@ PLEX_USER=your_plex_username
 
 AUDIOBOOKSHELF_SERVER_URL=http://192.168.1.30:13378
 AUDIOBOOKSHELF_API_KEY=your_abs_api_key
-AUDIOBOOKSHELF_USER=your_abs_user
+AUDIOBOOKSHELF_USER=your_abs_username
+# seconds without a progress sync before an audiobook counts as paused
+AUDIOBOOKSHELF_SESSION_TIMEOUT=45
 
 ONLY_GET_THIS_DEVICE=false
 
@@ -158,6 +165,10 @@ When multiple services are active, the newest active one is shown.
 	- Verify the configured user filters match your active session user.
 - Wrong/old artwork:
 	- Clear cache with `--clear-cache <provider>` or `all`.
+- Audiobookshelf shows nothing while a book is playing:
+	- Run `python main.py --debug` (or `python dabs.py`) to see which endpoint is used and why sessions are skipped.
+	- Presence lags roughly one sync behind because Audiobookshelf clients only report progress every 10-20 seconds; if it drops out mid-listen, raise `AUDIOBOOKSHELF_SESSION_TIMEOUT`.
+	- If `AUDIOBOOKSHELF_USER` is set, it must match the username or user id on the session.
 
 ## Disclaimer
 
