@@ -73,7 +73,7 @@ def get_audiobookshelf_data():
 		if USER and session.get("userId") != USER:
 			lg(f"Skipping session for user {session.get('userId')}, looking for {USER}.")
 			continue
-		is_stale = (int(time.time() * 1000) - session.get("updatedAt", 0)) > 10*1000
+		is_stale = (int(time.time() * 1000) - session.get("updatedAt", 0)) > 30*1000
 		if is_stale:
 			lg(f"Session in state {session.get('state')} appears stale, skipping.")
 			continue
